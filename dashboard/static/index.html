@@ -1,0 +1,150 @@
+<!doctype html>
+<!-- AgentGuard live dashboard. Plain HTML + JS, no build step. Data comes from dashboard/app.py:
+     /api/status (polled every 3 s) and /api/events (live Server-Sent Events feed). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentGuard</title>
+<style>
+  :root {
+    --bg: #0f1b2d; --panel: #16263d; --line: #2a3d5a; --text: #eef3fa; --muted: #9fb0c8;
+    --good: #2fbf71; --warn: #f2a93b; --bad: #ef4d5a; --info: #5aa9f2; --accent: #3ccf9a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-size: 28px; letter-spacing: .3px; }
+  h1 small { display: block; font-size: 15px; color: var(--accent); font-weight: 500; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; border: 1px solid var(--line); }
+  .b-good { background: rgba(47,191,113,.15); color: var(--good); border-color: var(--good); }
+  .b-warn { background: rgba(242,169,59,.15); color: var(--warn); border-color: var(--warn); }
+  .b-bad { background: rgba(239,77,90,.15); color: var(--bad); border-color: var(--bad); }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  button { font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--info); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .primary { background: #1f6f4f; border-color: var(--good); }
+  .kill { background: var(--bad); border-color: var(--bad); color: #fff; font-size: 19px; padding: 10px 22px; }
+  .confirm { background: #8a5a12; border-color: var(--warn); }
+  main { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 16px; padding: 16px 20px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .big { font-size: 30px; font-weight: 800; }
+  .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); } .muted { color: var(--muted); }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .row:last-child { border-bottom: 0; }
+  a { color: var(--info); }
+  code { font-size: 14px; overflow-wrap: anywhere; }
+  #feed { list-style: none; margin: 0; padding: 0; max-height: 62vh; overflow-y: auto; }
+  #feed li { padding: 8px 10px; border-left: 4px solid var(--line); margin-bottom: 6px; background: rgba(255,255,255,.02); border-radius: 6px; }
+  #feed li.good { border-left-color: var(--good); } #feed li.warn { border-left-color: var(--warn); }
+  #feed li.bad { border-left-color: var(--bad); } #feed li.info { border-left-color: var(--info); }
+  #feed .k { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-right: 8px; }
+  #feed .t { color: var(--text); }
+  pre#report { white-space: pre-wrap; margin: 0; font: 15px/1.5 ui-monospace, Menlo, monospace; max-height: 40vh; overflow-y: auto; }
+  .held { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 6px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AgentGuard <small>Know Your Agent, built into the XRP Ledger</small></h1>
+  <div class="badges" id="badges"></div>
+</header>
+<div class="controls">
+  <button class="primary" id="btn-start" onclick="act('start')">▶ Start agent</button>
+  <button class="kill" id="btn-kill" onclick="act('kill')">■ KILL SWITCH</button>
+  <button class="confirm" id="btn-confirm" onclick="act('confirm')">🔑 Confirm revoke (Acme approver key)</button>
+  <button id="btn-reissue" onclick="act('reissue')">↻ Re-issue passport</button>
+  <button id="btn-overcap" onclick="act('overcap')">⛔ Over-cap test (AP4M)</button>
+  <button id="btn-reset" onclick="act('reset')">⟲ Reset demo</button>
+  <span class="muted" id="busy" style="align-self:center"></span>
+</div>
+<main>
+  <section>
+    <div class="card"><h2>Agent passport (live from the XRP Ledger)</h2>
+      <div class="big" id="pp-status">…</div>
+      <div id="pp-details" class="muted"></div></div>
+    <div class="card"><h2>AgentGuard co-signer</h2>
+      <div class="big" id="ag-status">…</div>
+      <div id="ag-details" class="muted"></div></div>
+    <div class="card"><h2>Agent wallet (multi-signed)</h2><div id="wallet"></div></div>
+    <div class="card"><h2>Mastercard AP4M lane</h2><div id="ap4m"></div></div>
+    <div class="card" id="held-card" style="display:none"><h2>Held for a human</h2><div id="held"></div></div>
+  </section>
+  <section>
+    <div class="card"><h2>Live feed</h2><ul id="feed"></ul></div>
+    <div class="card"><h2>Morning risk report</h2><pre id="report" class="muted">No report yet.</pre></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const short = a => a ? a.slice(0, 8) + "…" + a.slice(-4) : "";
+const row = (k, v) => `<div class="row"><span class="muted">${k}</span><span>${v}</span></div>`;
+
+async function act(name, arg) {
+  const r = await fetch(`/api/${name}${arg ? "/" + arg : ""}`, {method: "POST"});
+  const j = await r.json().catch(() => ({}));
+  if (j.error) alert(j.error);
+  setTimeout(refresh, 400);
+}
+
+async function refresh() {
+  let s;
+  try { s = await (await fetch("/api/status")).json(); } catch (e) { return; }
+  const pp = s.passport, ag = s.agentguard, w = s.wallet, ap = s.ap4m;
+  const ppClass = pp.status === "active" ? "good" : (pp.status === "issued-not-accepted" ? "warn" : "bad");
+  $("pp-status").innerHTML = `<span class="${ppClass}">${esc(pp.status.toUpperCase())}</span>`;
+  $("pp-details").innerHTML = row("Level", esc(pp.level || "-")) + row("Expires", esc(pp.expires ? new Date(pp.expires).toLocaleString() : "-"))
+    + row("Issuer (Acme)", `<code>${short(pp.issuer)}</code>`) + row("On explorer", `<a href="${pp.link}" target="_blank">agent account ↗</a>`);
+  $("ag-status").innerHTML = ag.frozen ? `<span class="bad">FROZEN</span>` : `<span class="good">CO-SIGNING</span>`;
+  $("ag-details").innerHTML = row("Strikes", `${ag.strikes} / ${ag.strike_limit}`)
+    + row("Awaiting Acme approval", ag.pending_revoke ? '<span class="warn">yes: press Confirm revoke</span>' : "no")
+    + row("Spent today", `${esc(s.spent_today.XRP)} XRP · ${esc(s.spent_today.RLUSD)} RLUSD`);
+  $("wallet").innerHTML = row("Agent float", `<b>${w.agent_spendable_xrp} XRP</b>`)
+    + row("Master key", w.master_disabled ? '<span class="good">disabled</span>' : '<span class="bad">ENABLED</span>')
+    + row("Quorum", w.quorum ?? "-")
+    + w.signers.map(x => row(`${esc(x.role.replace("_", "-").toLowerCase())} (weight ${x.weight})`, `<code>${short(x.account)}</code>`)).join("")
+    + row("Acme treasury", `${w.treasury_xrp} XRP`);
+  $("ap4m").innerHTML = row("Mode", ap.mode === "LIVE" ? '<span class="good">LIVE</span>' : `<span class="warn">MOCK</span>`)
+    + (ap.mode === "MOCK" ? `<div class="muted" style="font-size:13px">${esc(ap.why_mock)}</div>` : "")
+    + row("Channel", ap.channel_id ? `<code>${short(ap.channel_id)}</code>` : "none yet")
+    + row("News merchant RLUSD", ap.payout ? esc(ap.payout.rlusd) : "-");
+  $("badges").innerHTML = [
+    `<span class="badge ${ap.mode === "LIVE" ? "b-good" : "b-warn"}">AP4M ${ap.mode}</span>`,
+    `<span class="badge ${s.llm.online ? "b-good" : "b-warn"}">Bedrock ${s.llm.online ? "ONLINE" : "LLM OFFLINE"}</span>`,
+    `<span class="badge ${s.rpc.quicknode ? "b-good" : "b-warn"}">${s.rpc.quicknode ? "Quicknode RPC" : "Public XRPL RPC"}</span>`,
+    `<span class="badge b-good">XRPL testnet</span>`].join("");
+  $("held-card").style.display = s.held.length ? "" : "none";
+  $("held").innerHTML = s.held.map(h => `<div class="held"><span>${esc(h.merchant)} / ${esc(h.item)} (${esc(h.price)} ${esc(h.currency)})</span>
+     <span><button onclick="act('approve','${h.purchase_id}')">Approve</button> <button onclick="act('reject','${h.purchase_id}')">Reject</button></span></div>`).join("");
+  if (s.report) { $("report").textContent = s.report; $("report").classList.remove("muted"); }
+  $("busy").textContent = s.busy ? `⏳ ${s.busy}…` : "";
+  for (const b of ["start", "reset", "reissue", "confirm", "overcap"]) $("btn-" + b).disabled = !!s.busy;
+  $("btn-confirm").disabled = !!s.busy || !ag.pending_revoke;
+  $("btn-kill").disabled = ag.frozen;
+}
+
+function addEvent(ev) {
+  if (ev.kind === "reset") $("feed").innerHTML = "";
+  const li = document.createElement("li");
+  li.className = ev.severity || "info";
+  const t = new Date(ev.ts * 1000).toLocaleTimeString();
+  const link = ev.link ? ` <a href="${esc(ev.link)}" target="_blank">explorer ↗</a>` : "";
+  const mode = ev.mode && ev.mode !== "LIVE" ? ` <span class="badge b-warn">${esc(ev.mode)}</span>` : "";
+  li.innerHTML = `<span class="k">${t} · ${esc(ev.kind)}</span>${mode}<br><span class="t">${esc(ev.title)}</span>${link}`;
+  $("feed").prepend(li);
+  if (["killswitch", "passport", "cosigner", "strike", "report", "voucher_redeemed", "settlement", "treasury"].includes(ev.kind)) refresh();
+}
+
+new EventSource("/api/events").onmessage = m => addEvent(JSON.parse(m.data));
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
