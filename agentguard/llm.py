@@ -6,34 +6,57 @@ The model ID comes from .env (BEDROCK_MODEL_ID); it is never hardcoded.
 """
 import json
 import re
+import time
 
 from agentguard import config
 
 _client = None
-_status = {"online": None, "why": ""}
+_status = {"online": None, "why": "", "checked": 0.0}
+RETRY_SECONDS = 300  # while Bedrock is unavailable, try again every 5 minutes (e.g. a new account being verified)
+
+
+# If BEDROCK_MODEL_ID isn't enabled for the account, the first of these that answers is used.
+FALLBACK_MODELS = ["us.anthropic.claude-haiku-4-5-20251001-v1:0", "us.amazon.nova-pro-v1:0"]
+_active = {"model": ""}
 
 
 def model_id() -> str:
-    return config.env("BEDROCK_MODEL_ID")
+    """The model actually in use (the configured one, or a working fallback)."""
+    return _active["model"] or config.env("BEDROCK_MODEL_ID")
 
 
 def available() -> bool:
-    """True if we can plausibly call Bedrock (checked once; a failed call flips it off)."""
+    """True if Bedrock really answers. Checked with one tiny call, cached; re-checked every 5 min while offline,
+    so the AI switches itself on as soon as AWS allows it (no restart needed)."""
     global _client
-    if _status["online"] is not None:
-        return _status["online"]
+    if _status["online"] or (_status["online"] is False and time.time() - _status["checked"] < RETRY_SECONDS):
+        return bool(_status["online"])
+    _status["checked"] = time.time()
     try:
         import boto3
         session = boto3.Session(region_name=config.env("AWS_REGION", "us-east-1"))
         if session.get_credentials() is None:
             raise RuntimeError("no AWS credentials found")
-        if not model_id():
-            raise RuntimeError("BEDROCK_MODEL_ID is not set")
         _client = session.client("bedrock-runtime")
+        candidates = [m for m in [config.env("BEDROCK_MODEL_ID")] + FALLBACK_MODELS if m]
+        last = None
+        for candidate in candidates:  # a probe costs a fraction of a cent
+            try:
+                _client.converse(modelId=candidate, messages=[{"role": "user", "content": [{"text": "Reply: ok"}]}],
+                                 inferenceConfig={"maxTokens": 5})
+                _active["model"] = candidate
+                break
+            except Exception as exc:
+                last = exc
+        else:
+            raise last or RuntimeError("BEDROCK_MODEL_ID is not set")
         _status.update(online=True, why="")
     except Exception as exc:
-        _status.update(online=False, why=str(exc))
-    return _status["online"]
+        why = str(exc)
+        if "being verified" in why:
+            why = "AWS account still being verified by Amazon (retrying every 5 min)"
+        _status.update(online=False, why=why[:200])
+    return bool(_status["online"])
 
 
 def offline_reason() -> str:
@@ -53,7 +76,7 @@ def ask(prompt: str, system: str = "", max_tokens: int = 600) -> str | None:
         out = _client.converse(**kwargs)
         return out["output"]["message"]["content"][0]["text"]
     except Exception as exc:
-        _status.update(online=False, why=str(exc)[:200])
+        _status.update(online=False, why=str(exc)[:200], checked=time.time())
         return None
 
 

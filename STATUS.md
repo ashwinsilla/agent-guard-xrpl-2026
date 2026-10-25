@@ -12,7 +12,7 @@
 - [x] Tests (17, offline) + e2e_testnet.py (14/14 on testnet, hashes in PROOF.md)
 - [x] Docs: README, DEMO_SCRIPT, MASTERCARD, PITCH_OUTLINE, SUBMISSION (char counts checked)
 - [x] Mastercard AP4M LIVE: channel open, VoucherRedeemed + settlement + receipt proven (PROOF.md)
-- [ ] Bedrock ONLINE: needs AWS credentials + BEDROCK_MODEL_ID in .env
+- [x] Bedrock ONLINE (Amazon Nova Pro; Claude Haiku 4.5 once the Anthropic use-case form is submitted): checker AI, news score, Strands agent
 - [x] Quicknode: all XRPL traffic via the Quicknode testnet endpoint; live feed via Quicknode WebSocket (Streams webhook not connected)
 - [ ] AgentCore Runtime deploy (needs AWS credentials)
 - [ ] Ledger device / Speculos in the approver slot (software key today)
