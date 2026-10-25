@@ -8,7 +8,7 @@
 6. **Live demo** (DEMO_SCRIPT.md).
 7. **Novelty:** (a) the ledger blocks unverified agents, with no merchant SDK; (b) one action cuts the agent off everywhere, attacker included, because its wallet can't sign alone; (c) an AI task-fit check whose verdict validators enforce.
 8. **Proof:** the PROOF.md table: tesSUCCESS co-signed, tefBAD_QUORUM, tecBAD_CREDENTIALS, tecNO_PERMISSION, float returned.
-9. **Partners:** XRPL, Mastercard AP4M, AWS Strands/Bedrock, Ledger (approver slot), Quicknode.
+9. **Partners:** XRPL, Mastercard AP4M (live), AWS Strands/Bedrock, Ledger (approver slot), Quicknode (all ledger traffic + the live feed as an independent witness).
 10. **Honest limitations + next steps:** AP4M LIVE once registered, a Ledger device in the approver slot, a checker accuracy benchmark, an RLUSD trustline on the XRPL lane.
 
 ## Likely judge questions

@@ -13,6 +13,6 @@
 - [x] Docs: README, DEMO_SCRIPT, MASTERCARD, PITCH_OUTLINE, SUBMISSION (char counts checked)
 - [x] Mastercard AP4M LIVE: channel open, VoucherRedeemed + settlement + receipt proven (PROOF.md)
 - [ ] Bedrock ONLINE: needs AWS credentials + BEDROCK_MODEL_ID in .env
-- [ ] Quicknode: needs the endpoint in XRPL_RPC_URL; webhook route is ready
+- [x] Quicknode: all XRPL traffic via the Quicknode testnet endpoint; live feed via Quicknode WebSocket (Streams webhook not connected)
 - [ ] AgentCore Runtime deploy (needs AWS credentials)
 - [ ] Ledger device / Speculos in the approver slot (software key today)

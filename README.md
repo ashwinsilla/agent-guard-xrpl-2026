@@ -83,7 +83,7 @@ Mastercard rail the equivalent is AgentGuard's **voucher gate** plus closing the
 | **Mastercard AP4M** | News Sentiment is paid with EIP-712 vouchers in RLUSD on the XRPL EVM testnet (chain 1449000). AgentGuard's voucher gate signs only approved purchases; the kill switch closes the channel. `agentguard/ap4m.py`, see `MASTERCARD.md` |
 | **AWS** | The Treasury Analyst is a **Strands Agents** agent on **Amazon Bedrock**; the checker AI and the news risk score use Bedrock. Labelled `LLM OFFLINE` fallback when no credentials. `agents/treasury_analyst.py`, `agentguard/checker.py`, `agentguard/llm.py` |
 | **Ledger** | The approver key fills the Ledger device's slot (weight 2) in the agent's signer list and is the issuer's regular key, so swapping in a device or the Speculos emulator changes only which key signs. |
-| **Quicknode** | All XRPL traffic goes through `XRPL_RPC_URL` (set it to the Quicknode endpoint). `agentguard/ledger_feed.py` subscribes over `XRPL_WS_URL` (Quicknode WebSocket) to our accounts and streams every validated transaction into the dashboard; `POST /webhooks/quicknode` accepts Quicknode Streams deliveries. |
+| **Quicknode** | **All XRP Ledger traffic runs through our Quicknode testnet endpoint** (JSON-RPC: payments, multi-signed submissions, passports, checks). The dashboard's live ledger feed (`agentguard/ledger_feed.py`) subscribes over the **Quicknode WebSocket** to the agent, Acme and the vendors, and shows every validated transaction as the ledger saw it: an independent witness to what our code claims. (A `POST /webhooks/quicknode` route for Quicknode Streams exists but isn't connected in this demo.) |
 
 ## Run it
 
