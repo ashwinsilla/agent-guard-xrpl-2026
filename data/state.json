@@ -1,0 +1,25 @@
+{
+  "strikes": 6,
+  "agent_revoked": true,
+  "channel_totals": {
+    "0x190d9c4a40594c26847834fc5d13f8f5b2fc13abf6f14e569df166ebaf41478b": "80000000000000000"
+  },
+  "approved_purchases": {},
+  "held": {},
+  "spent_today_wei": "70000000000000000",
+  "last_credential_id": "2D5A9960C7F6A6D1E290AE2F81276ADE70164A1A20A7E3FF4562C6FD788AFC38",
+  "channel_id": "0x190d9c4a40594c26847834fc5d13f8f5b2fc13abf6f14e569df166ebaf41478b",
+  "mock_ledger": {
+    "channels": {
+      "0x190d9c4a40594c26847834fc5d13f8f5b2fc13abf6f14e569df166ebaf41478b": {
+        "cap": "20000000000000000000",
+        "redeemed": "80000000000000000",
+        "status": 2,
+        "payout": "0x6b0a0DD381a80E3C8d8bB46303E450149e0050E8"
+      }
+    },
+    "balances": {
+      "0x6b0a0dd381a80e3c8d8bb46303e450149e0050e8": "80000000000000000"
+    }
+  }
+}
