@@ -34,10 +34,10 @@ The demo: the agent buys live FX rates and crypto prices on the XRP Ledger (co-s
 
 What's new: the blockchain itself blocks unverified agents; one action cuts an agent off from everyone, attacker included; and an AI judgment about task fit is enforced by the ledger's validators, not by the agent's goodwill.
 
-Honest limits: the attack scene is a labelled simulation; a software key stands in for the Ledger device; in the demo all signer keys sit on one machine (the design separates them).
+Honest limits: the attack scene is a labelled simulation; a software key stands in for the Ledger device; in the demo all signer keys sit on one machine (the design separates them); the checker is packaged for AgentCore Runtime, but our new AWS account's policy blocked the cloud deploy.
 <!-- /description -->
 
 ## Technical description
 <!-- technical -->
-Python 3.12. xrpl-py on XRPL testnet: CredentialCreate/Accept/Delete, Deposit Authorization + DepositPreauth (AuthorizeCredentials), Payments with CredentialIDs, SignerListSet + asfDisableMaster multi-signing (agent 1, AgentGuard 1, approver 2, quorum 2), and the approver as the issuer's regular key. x402-style FastAPI merchants verify payments on-ledger. Mastercard AP4M lane (live): EIP-712 vouchers over x402 (PAYMENT-SIGNATURE) on XRPL EVM testnet (chain 1449000), voucher gate, background redeemVoucher + settle with receipts, over-cap check, channel close. Strands Agents + Amazon Bedrock for the agent and checker AI, with labelled offline fallbacks. Live FastAPI/SSE dashboard; all XRPL traffic via Quicknode RPC, live ledger feed via Quicknode WebSocket.
+Python 3.12. xrpl-py on XRPL testnet: CredentialCreate/Accept/Delete, Deposit Authorization + DepositPreauth (AuthorizeCredentials), Payments with CredentialIDs, SignerListSet + asfDisableMaster multi-signing (agent 1, AgentGuard 1, approver 2, quorum 2), and the approver as the issuer's regular key. x402-style FastAPI merchants verify payments on-ledger. Mastercard AP4M lane (live): EIP-712 vouchers over x402 (PAYMENT-SIGNATURE) on XRPL EVM testnet (chain 1449000), voucher gate, background redeemVoucher + settle with receipts, over-cap check, channel close. Strands Agents + Amazon Bedrock (Nova Pro) for the agent and checker AI, checker packaged for AgentCore Runtime. Live FastAPI/SSE dashboard; all XRPL traffic via Quicknode RPC, live ledger feed via Quicknode WebSocket.
 <!-- /technical -->
