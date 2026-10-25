@@ -1,3 +1,5 @@
+> **Superseded:** the latest spec is `docs/AgentGuard_Project_Brief.pdf` (co-signed XRPL wallet, XRP prices, News-only AP4M, 3x rule). This file is kept for history.
+
 # AgentGuard: complete the project for hackathon submission
 
 You are finishing **AgentGuard** in this repository (`agent-guard-xrpl-hackathon`) for the AI & Fintech XRPL Hackathon (team "gizmo geeks", Agentic Finance track). Work autonomously from start to finish. The final project submission closes **Sunday Oct 25, 12:30 PM EDT**, so prioritise a working, demo-ready, well-documented project over perfection.

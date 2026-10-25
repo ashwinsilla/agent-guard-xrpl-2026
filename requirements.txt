@@ -82,3 +82,6 @@ wrapt==2.5.1
 x402-xrpl==0.3.4
 xrpl-py==5.2.0
 yarl==1.25.1
+strands-agents==1.26.0
+boto3==1.43.118
+pytest==9.1.1

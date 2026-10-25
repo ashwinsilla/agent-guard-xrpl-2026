@@ -1,25 +1,44 @@
 {
-  "strikes": 6,
-  "agent_revoked": true,
+  "strikes": 0,
+  "frozen": false,
+  "agent_revoked": false,
+  "pending_revoke": false,
   "channel_totals": {
-    "0x190d9c4a40594c26847834fc5d13f8f5b2fc13abf6f14e569df166ebaf41478b": "80000000000000000"
+    "0x190d9c4a40594c26847834fc5d13f8f5b2fc13abf6f14e569df166ebaf41478b": "2080000000000000000",
+    "0x605d896f500f883eed870f849235fb4800bc08724b73e1491896f9e0cd13724c": "250000000000000000"
   },
   "approved_purchases": {},
   "held": {},
-  "spent_today_wei": "70000000000000000",
+  "spent_today": {
+    "XRP": "0.10",
+    "RLUSD": "0.25"
+  },
+  "price_history": {
+    "fx": [
+      "0.05"
+    ],
+    "crypto": [
+      "0.05"
+    ],
+    "news": [
+      "0.25"
+    ]
+  },
   "last_credential_id": "2D5A9960C7F6A6D1E290AE2F81276ADE70164A1A20A7E3FF4562C6FD788AFC38",
-  "channel_id": "0x190d9c4a40594c26847834fc5d13f8f5b2fc13abf6f14e569df166ebaf41478b",
+  "channel_id": "0x605d896f500f883eed870f849235fb4800bc08724b73e1491896f9e0cd13724c",
+  "channel_mode": "live",
   "mock_ledger": {
     "channels": {
       "0x190d9c4a40594c26847834fc5d13f8f5b2fc13abf6f14e569df166ebaf41478b": {
         "cap": "20000000000000000000",
-        "redeemed": "80000000000000000",
-        "status": 2,
-        "payout": "0x6b0a0DD381a80E3C8d8bB46303E450149e0050E8"
+        "redeemed": "2080000000000000000",
+        "status": 1,
+        "payout": "0x6b0a0DD381a80E3C8d8bB46303E450149e0050E8",
+        "settled": "2080000000000000000"
       }
     },
     "balances": {
-      "0x6b0a0dd381a80e3c8d8bb46303e450149e0050e8": "80000000000000000"
+      "0x6b0a0dd381a80e3c8d8bb46303e450149e0050e8": "3910000000000000000"
     }
   }
 }

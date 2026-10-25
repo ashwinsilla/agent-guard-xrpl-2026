@@ -5,8 +5,11 @@ How a payment works, in plain words:
   1. The agent and the AP4M service share a payment CHANNEL with a spending cap (in RLUSD).
   2. To pay, the agent signs a VOUCHER: "I owe the merchant a TOTAL of X RLUSD on this channel".
      X is the running total (cumulative), NOT the price of this one purchase.
-  3. Anyone can submit the voucher to the PaymentLedger contract (`redeemVoucher`). The contract
-     emits a VoucherRedeemed event and the service pays the merchant RLUSD from the vault.
+  3. The merchant checks the voucher and releases the data IMMEDIATELY (no chain write on the hot path).
+  4. Later, in the background, the voucher is redeemed on the PaymentLedger (`redeemVoucher`: advances the
+     "redeemed" watermark, emits VoucherRedeemed) and SETTLED (the service sends redeemed - settled RLUSD to
+     the merchant's payout wallet: ClaimPaid + SettlementRecorded, plus a verifiable receipt).
+  The contract enforces: settled <= redeemed <= cap. An over-cap voucher is rejected on-chain.
 
 THE VOUCHER GATE (the important AgentGuard idea):
   `sign_voucher()` below is the ONLY place that signs vouchers, and it lives in AgentGuard, not in
@@ -79,7 +82,8 @@ def to_wei(rlusd) -> int:
 
 
 def from_wei(wei) -> str:
-    return format(Decimal(int(wei)) / 10 ** DECIMALS, "f").rstrip("0").rstrip(".") or "0"
+    text = format(Decimal(int(wei)) / 10 ** DECIMALS, "f")
+    return (text.rstrip("0").rstrip(".") if "." in text else text) or "0"  # 20 stays "20", 0.250 -> "0.25"
 
 
 def _w3() -> Web3:
@@ -102,6 +106,18 @@ def _merchant_account():
 
 def agent_address() -> str:
     return _agent_account().address
+
+
+def _submitter():
+    """Who pays gas to submit a redemption: the merchant if it has gas, otherwise the agent wallet
+    (Mastercard's example agent submits its own vouchers). Anyone may submit a valid agent-signed voucher."""
+    try:
+        acct = _merchant_account()
+        if _w3().eth.get_balance(acct.address) > 0:
+            return acct
+    except RuntimeError:
+        pass
+    return _agent_account()
 
 
 # --- mode + session ---------------------------------------------------------------------------
@@ -174,12 +190,32 @@ def get_channel_state(channel_id: str) -> dict:
     return {"cap": r[7], "redeemed": r[8], "status": int(r[11]), "payout": r[12], "agent": r[9], "valid_before": r[17]}
 
 
+def list_channels() -> list:
+    """LIVE: the team's channels from the AP4M service (SDK listChannels)."""
+    r = requests.get(f"{config.AP4M_API_BASE}/public/participant/channels",
+                     headers={"Authorization": f"Bearer {sign_in()}"}, timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"listChannels failed ({r.status_code}): {r.text[:120]}")
+    return r.json().get("channels", [])
+
+
+def channel_open(channel_id: str) -> bool:
+    """Is this channel open? MOCK: simulated status. LIVE: the service's channel_status."""
+    if mode() == "mock":
+        ch = state.load()["mock_ledger"].get("channels", {}).get(channel_id)
+        return bool(ch) and int(ch["status"]) == 1
+    return any(c["channel_id"] == channel_id and c["channel_status"] == "open" for c in list_channels())
+
+
 # --- channel lifecycle ------------------------------------------------------------------------
 def ensure_channel(cap_rlusd: str = "5") -> str:
     """Return the id of an open channel, opening one if needed (and remembering it)."""
     s = state.load()
-    if s["channel_id"]:
-        return s["channel_id"]
+    if s["channel_id"] and s.get("channel_mode") in (None, mode()):
+        if mode() == "mock" or channel_open(s["channel_id"]):
+            return s["channel_id"]
+    if s["channel_id"]:  # opened in the other mode (e.g. a MOCK channel, now LIVE): don't reuse it
+        state.update(channel_id=None)
     if mode() == "mock":
         return _mock_open_channel(cap_rlusd)
     token = sign_in()
@@ -191,7 +227,7 @@ def ensure_channel(cap_rlusd: str = "5") -> str:
         channel_id = open_ones[0]["channel_id"]
     else:
         channel_id = _live_request_channel(token, cap_rlusd)
-    state.update(channel_id=channel_id)
+    state.update(channel_id=channel_id, channel_mode="live")
     events.emit("ap4m", f"AP4M channel ready ({channel_id[:10]}…)", "good", mode="LIVE", channel_id=channel_id)
     return channel_id
 
@@ -232,10 +268,10 @@ def _mock_open_channel(cap_rlusd) -> str:
     merchant = _merchant_account().address
     def init(s):
         led = s["mock_ledger"]
-        led.setdefault("channels", {})[channel_id] = {"cap": str(to_wei(20)), "redeemed": "0", "status": 1, "payout": merchant}
+        led.setdefault("channels", {})[channel_id] = {"cap": str(to_wei(cap_rlusd)), "redeemed": "0", "status": 1, "payout": merchant}
         led.setdefault("balances", {})
     state.mutate(init)
-    state.update(channel_id=channel_id)
+    state.update(channel_id=channel_id, channel_mode="mock")
     events.emit("ap4m", f"MOCK channel opened ({channel_id[:10]}…): simulated, not on-chain", "warn",
                 mode="MOCK", channel_id=channel_id)
     return channel_id
@@ -251,6 +287,7 @@ def close_channel() -> dict:
     channel_id = s["channel_id"]
     if not channel_id:
         return {"closed": False, "simulated": True, "tx_hash": None, "note": "no channel"}
+    flush()  # redeem + settle the merchant's last vouchers first: honest merchants still get paid
     if mode() == "mock":
         def close(st):
             st["mock_ledger"]["channels"][channel_id]["status"] = 2
@@ -327,21 +364,21 @@ def recover_voucher_signer(channel_id: str, cumulative: int, signature: str) -> 
 def gate_check(purchase_id: str, merchant: str, increment_wei: int) -> None:
     """Raise GateRefused unless signing this voucher is allowed. Order matters: cheapest/safest first."""
     s = state.load()
-    if s["agent_revoked"]:
-        raise GateRefused("agent has been revoked by the kill switch")
+    if s["frozen"] or s["agent_revoked"]:
+        raise GateRefused("AgentGuard is frozen by the kill switch: no vouchers for this agent")
     status = passport.get_passport_status()["status"]
     if status != "active":
         raise GateRefused(f"passport is not active (status: {status})")
     approval = s["approved_purchases"].get(purchase_id)
-    if not approval:
+    if not approval or approval.get("rail") != "ap4m":
         raise GateRefused("the checker has not approved this purchase")
-    if approval["merchant"] != merchant or int(approval["amount_wei"]) != int(increment_wei):
+    if approval["merchant"] != merchant or int(approval["amount"]) != int(increment_wei):
         raise GateRefused("purchase does not match what the checker approved")
     if increment_wei <= 0:
         raise GateRefused("amount must be positive")
     if not s["channel_id"]:
         raise GateRefused("no open payment channel")
-    if mode() == "mock" and s["mock_ledger"]["channels"][s["channel_id"]]["status"] != 1:
+    if not channel_open(s["channel_id"]):
         raise GateRefused("payment channel is closed")
 
 
@@ -401,14 +438,13 @@ def redeem_voucher(channel_id: str, cumulative: int, signature: str, merchant_na
             ch = st["mock_ledger"]["channels"][channel_id]
             if int(ch["status"]) != 1:
                 raise ValueError("channel is closed")
-            delta = cumulative - int(ch["redeemed"])
-            ch["redeemed"] = str(cumulative)
-            bal = st["mock_ledger"]["balances"]
-            bal[payout.lower()] = str(int(bal.get(payout.lower(), "0")) + delta)
+            if cumulative > int(ch["cap"]):
+                raise ValueError("over cap: the PaymentLedger rejects vouchers above the channel cap")
+            ch["redeemed"] = str(cumulative)  # watermark only; RLUSD moves at settlement
         state.mutate(apply)
         tx_hash, link, claim_id = "MOCK-" + uuid.uuid4().hex[:16], None, "0xMOCK" + uuid.uuid4().hex[:8]
     else:
-        w3, acct = _w3(), _merchant_account()
+        w3, acct = _w3(), _submitter()
         ledger = w3.eth.contract(address=Web3.to_checksum_address(config.PAYMENT_LEDGER), abi=LEDGER_ABI)
         call = ledger.functions.redeemVoucher((bytes.fromhex(channel_id[2:]), cumulative), bytes.fromhex(signature[2:]))
         tx = call.build_transaction({"from": acct.address, "nonce": w3.eth.get_transaction_count(acct.address),
@@ -429,13 +465,11 @@ def redeem_voucher(channel_id: str, cumulative: int, signature: str, merchant_na
         _record_redemption(tx_hash)
     after_state = get_channel_state(channel_id)
     delta = after_state["redeemed"] - before_state["redeemed"]
-    # Payout to the merchant happens shortly after (the service pays from the vault), so the live
-    # balance may lag by a few blocks; we report whatever we see now and the dashboard re-polls.
-    balance_after = rlusd_balance(payout)
+    balance_after = rlusd_balance(payout)  # unchanged until settlement moves the RLUSD
     result = {"tx_hash": tx_hash, "claim_id": claim_id, "amount_wei": delta, "payout": payout,
               "balance_before": balance_before, "balance_after": balance_after, "mode": mode_label(), "link": link}
     events.emit("voucher_redeemed",
-                f"VoucherRedeemed: {from_wei(delta)} RLUSD to {merchant_name} (claim {claim_id[:12]}…)",
+                f"VoucherRedeemed on the PaymentLedger: {from_wei(delta)} RLUSD for {merchant_name} (claim {claim_id[:12]}…)",
                 "good" if mode() == "live" else "warn", **{k: (str(v) if isinstance(v, int) else v) for k, v in result.items()},
                 merchant=merchant_name)
     return result
@@ -448,3 +482,119 @@ def _record_redemption(tx_hash: str) -> None:
                       headers={"Authorization": f"Bearer {sign_in()}"}, json={"tx_hash": tx_hash}, timeout=30)
     except Exception as exc:  # the chain is the source of truth; this is only a nudge
         config.log.warning("record-redemption failed: %s", exc)
+
+
+# --- settlement: RLUSD actually moves to the merchant ---------------------------------------------
+def settle(channel_id: str | None = None) -> dict:
+    """Send (redeemed - settled) RLUSD to the merchant's payout wallet (ClaimPaid + SettlementRecorded).
+
+    LIVE: the service's settle endpoint (SDK settle()), which also returns a verifiable receipt.
+    MOCK: the same accounting, simulated and labelled.
+    """
+    channel_id = channel_id or state.load()["channel_id"]
+    if not channel_id:
+        return {"settled": False, "note": "no channel"}
+    if mode() == "mock":
+        out = {}
+
+        def apply(st):
+            ch = st["mock_ledger"]["channels"][channel_id]
+            amount = int(ch["redeemed"]) - int(ch.get("settled", "0"))
+            ch["settled"] = ch["redeemed"]
+            bal = st["mock_ledger"].setdefault("balances", {})
+            bal[ch["payout"].lower()] = str(int(bal.get(ch["payout"].lower(), "0")) + amount)
+            out.update(amount=amount, payout=ch["payout"])
+        state.mutate(apply)
+        if out["amount"]:
+            events.emit("settlement", f"MOCK settlement: {from_wei(out['amount'])} RLUSD to the merchant payout wallet "
+                        "(ClaimPaid + SettlementRecorded simulated)", "warn", mode="MOCK")
+        return {"settled": True, "amount_rlusd": from_wei(out["amount"]), "mode": "MOCK"}
+    base, headers = config.AP4M_API_BASE, {"Authorization": f"Bearer {sign_in()}"}
+    for _ in range(40):  # 202 = payout waiting for confirmations: poll (up to ~2 minutes), as the SDK does
+        r = requests.post(f"{base}/public/participant/settle", headers=headers, json={"channel_id": channel_id}, timeout=60)
+        if not r.ok:
+            raise RuntimeError(f"settle failed ({r.status_code}): {r.text[:150]}")
+        if r.status_code != 202:
+            break
+        time.sleep(3)
+    data = r.json()
+    receipt = base + data["receipt_url"] if data.get("receipt_url") else None
+    events.emit("settlement", f"Settled {data.get('amount_rlusd')} RLUSD to the merchant (ClaimPaid + SettlementRecorded)",
+                "good", mode="LIVE", tx_hash=data.get("settlement_tx"),
+                link=config.evm_tx_link(data["settlement_tx"]) if data.get("settlement_tx") else None,
+                payout_tx=data.get("payout_tx"), receipt_url=receipt)
+    if receipt:
+        events.emit("settlement", "Verifiable AP4M receipt (channel + claim + payout)", "good", mode="LIVE", link=receipt)
+    return {"settled": True, "mode": "LIVE", **data, "receipt": receipt}
+
+
+# --- background redemption: keep chain writes OFF the payment hot path ------------------------------
+_queue: dict = {}          # channel_id -> (cumulative, signature, merchant_name): only the LATEST voucher matters
+_queue_lock = threading.Condition()
+_queue_lock.busy = False  # True while the worker is redeeming/settling
+_worker_started = {"yes": False}
+
+
+def queue_redemption(channel_id: str, cumulative: int, signature: str, merchant_name: str) -> None:
+    """Merchant side: data was already released; redeem + settle this voucher in the background.
+
+    Vouchers carry the RUNNING TOTAL, so if several pile up only the highest needs redeeming.
+    """
+    with _queue_lock:
+        old = _queue.get(channel_id)
+        if not old or cumulative > old[0]:
+            _queue[channel_id] = (cumulative, signature, merchant_name)
+        if not _worker_started["yes"]:
+            threading.Thread(target=_worker, daemon=True).start()
+            _worker_started["yes"] = True
+        _queue_lock.notify()
+
+
+def _worker() -> None:
+    while True:
+        with _queue_lock:
+            while not _queue:
+                _queue_lock.wait()
+            channel_id, item = _queue.popitem()
+            _queue_lock.busy = True
+        try:
+            redeem_voucher(channel_id, item[0], item[1], merchant_name=item[2])
+            settle(channel_id)
+        except Exception as exc:
+            events.emit("ap4m", f"Background redemption failed: {type(exc).__name__}: {str(exc)[:150]}", "bad")
+        finally:
+            with _queue_lock:
+                _queue_lock.busy = False
+                _queue_lock.notify_all()
+
+
+def flush(timeout: float = 120) -> None:
+    """Wait until every queued voucher is redeemed and settled (before closing a channel, or in tests)."""
+    deadline = time.time() + timeout
+    with _queue_lock:
+        while (_queue or getattr(_queue_lock, "busy", False)) and time.time() < deadline:
+            _queue_lock.wait(timeout=1)
+
+
+# --- over-cap proof: the spend limit is enforced by AgentGuard AND by the PaymentLedger -------------------
+def prove_over_cap() -> dict:
+    """Try to spend 1 RLUSD more than the channel cap. Both the voucher gate and the ledger say no."""
+    channel_id = state.load()["channel_id"] or ensure_channel()
+    ch = get_channel_state(channel_id)
+    over = int(ch["cap"]) + to_wei("1")
+    events.emit("ap4m", f"Over-cap attempt: a voucher for {from_wei(over)} RLUSD on a {from_wei(ch['cap'])} RLUSD channel",
+                "info", mode=mode_label())
+    gate = "AgentGuard's voucher gate never signs above the cap (it checks cap before signing)"
+    signature = sign_voucher_raw(channel_id, over)  # signed directly, ONLY to show the ledger's own check
+    if mode() == "mock":
+        verdict, ok = "rejected (simulated PaymentLedger rule: redeemed <= cap)", True
+    else:
+        ledger = _w3().eth.contract(address=Web3.to_checksum_address(config.PAYMENT_LEDGER), abi=LEDGER_ABI)
+        try:  # eth_call: asks the contract what WOULD happen; no transaction, no gas, nothing changes
+            ledger.functions.redeemVoucher((bytes.fromhex(channel_id[2:]), over), bytes.fromhex(signature[2:])).call(
+                {"from": _submitter().address})
+            verdict, ok = "ACCEPTED (unexpected!)", False
+        except Exception:  # the contract refuses (custom error): exactly what we want to show
+            verdict, ok = "REVERTED by the Mastercard PaymentLedger contract (redeemed may never exceed the cap)", True
+    events.emit("enforcement", f"Over-cap voucher {verdict}. {gate}.", "good" if ok else "bad", mode=mode_label())
+    return {"rejected": ok, "verdict": verdict}

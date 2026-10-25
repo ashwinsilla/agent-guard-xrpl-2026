@@ -2,3 +2,8 @@
 .venv/
 .DS_Store
 __pycache__/
+
+# runtime data written by the demo (events, state, reports)
+data/
+reports/
+.pytest_cache/

@@ -1,13 +1,18 @@
-# Status
+# Status (spec: docs/AgentGuard_Project_Brief.pdf, latest version)
 
-- [x] Recon, PLAN.md
-- [x] Phase 1 core: config/events/state/passport/setup_merchant/reset_demo (preflight: written after Phase 5)
-- [ ] Phase 2 merchants
-- [ ] Phase 3 AP4M
-- [ ] Phase 4 checker + kill switch
-- [ ] Phase 5 agent
-- [ ] Phase 6 dashboard
-- [ ] Phase 7 demo script
-- [ ] Phase 8 tests
-- [ ] Phase 9 Ledger (optional)
-- [ ] Phase 10 docs
+- [x] Passport (XRPL Credential, level + expiry), issued/revoked with Acme's approver key (issuer's regular key)
+- [x] Verified-only merchants (Deposit Authorization + DepositPreauth) for FX Rates and Crypto Prices
+- [x] Co-signed agent wallet: signer list agent 1 / AgentGuard 1 / approver 2, quorum 2, master key disabled
+- [x] Checker: hard rules (approved list, 3x price, daily budget) + Bedrock AI on structured facts only (labelled LLM OFFLINE without AWS creds)
+- [x] AgentGuard co-signer (XRPL) and voucher gate (Mastercard AP4M)
+- [x] Merchants: XRPL rail (FX, Crypto, attacker) + AP4M rail (News, deeper pull)
+- [x] Kill switch: freeze (stop co-signing, close channel) -> approver confirm (CredentialDelete, refusal proofs, float swept)
+- [x] Treasury Analyst agent: Strands + Bedrock, labelled OFFLINE planner fallback, labelled SIMULATED HIJACK scene
+- [x] Dashboard (live SSE feed, buttons) + run_demo.py + preflight + reset
+- [x] Tests (17, offline) + e2e_testnet.py (14/14 on testnet, hashes in PROOF.md)
+- [x] Docs: README, DEMO_SCRIPT, MASTERCARD, PITCH_OUTLINE, SUBMISSION (char counts checked)
+- [x] Mastercard AP4M LIVE: channel open, VoucherRedeemed + settlement + receipt proven (PROOF.md)
+- [ ] Bedrock ONLINE: needs AWS credentials + BEDROCK_MODEL_ID in .env
+- [ ] Quicknode: needs the endpoint in XRPL_RPC_URL; webhook route is ready
+- [ ] AgentCore Runtime deploy (needs AWS credentials)
+- [ ] Ledger device / Speculos in the approver slot (software key today)

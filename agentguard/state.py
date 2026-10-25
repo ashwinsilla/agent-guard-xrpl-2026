@@ -15,13 +15,17 @@ _lock = threading.RLock()
 
 DEFAULT = {
     "strikes": 0,                 # number of BLOCKed purchases since last reset
-    "agent_revoked": False,       # True after the kill switch fires
+    "frozen": False,              # True once the kill switch fires: AgentGuard co-signs NOTHING any more
+    "agent_revoked": False,       # True after Acme deleted the passport (CredentialDelete)
+    "pending_revoke": False,      # frozen, waiting for Acme's approver key to confirm the revocation
     "channel_totals": {},         # channel_id -> cumulative RLUSD base units (string) already SIGNED
-    "approved_purchases": {},     # purchase_id -> {"merchant","amount_wei"}: checker approvals the gate honours
+    "approved_purchases": {},     # purchase_id -> {"merchant","rail","amount","pay_to"}: approvals the signers honour once
     "held": {},                   # purchase_id -> purchase waiting for human approval
-    "spent_today_wei": "0",       # total approved spend (RLUSD base units)
+    "spent_today": {"XRP": "0", "RLUSD": "0"},  # approved spend per currency (decimal strings)
+    "price_history": {},          # merchant key -> list of prices paid (the checker AI sees this)
     "last_credential_id": None,   # last passport ID seen on the ledger (shown again after revoke to prove the refusal)
     "channel_id": None,           # the AP4M channel in use
+    "channel_mode": None,         # "live" or "mock": which mode opened that channel
     "mock_ledger": {},            # MOCK mode only: simulated on-chain data
 }
 
@@ -72,5 +76,6 @@ def reset(keep_channel: bool = True) -> dict:
             s["channel_id"] = old["channel_id"]
             s["channel_totals"] = old["channel_totals"]
             s["mock_ledger"] = old["mock_ledger"]
+            s["channel_mode"] = old.get("channel_mode")
         save(s)
         return s
