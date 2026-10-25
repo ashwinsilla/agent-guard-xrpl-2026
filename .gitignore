@@ -7,3 +7,7 @@ __pycache__/
 data/
 reports/
 .pytest_cache/
+
+# AgentCore build cache and per-account deploy config
+agentcore_checker/.bedrock_agentcore/
+agentcore_checker/.bedrock_agentcore.yaml

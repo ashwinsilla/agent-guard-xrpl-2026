@@ -14,5 +14,5 @@
 - [x] Mastercard AP4M LIVE: channel open, VoucherRedeemed + settlement + receipt proven (PROOF.md)
 - [x] Bedrock ONLINE (Amazon Nova Pro; Claude Haiku 4.5 once the Anthropic use-case form is submitted): checker AI, news score, Strands agent
 - [x] Quicknode: all XRPL traffic via the Quicknode testnet endpoint; live feed via Quicknode WebSocket (Streams webhook not connected)
-- [ ] AgentCore Runtime deploy (needs AWS credentials)
+- [~] AgentCore Runtime: checker packaged + configured (`agentcore_checker/`); deploy blocked by the account's S3/ECR deny policy
 - [ ] Ledger device / Speculos in the approver slot (software key today)
